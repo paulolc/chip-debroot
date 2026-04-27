@@ -84,9 +84,9 @@ jobs:
       - name: Download Linux kernel
         run: |
           cd /tmp
-          wget https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-${KERNEL_VERSION}.y.git/snapshot/linux-${KERNEL_VERSION}.tar.gz
-          tar -xzf linux-${KERNEL_VERSION}.tar.gz
-          mv linux-${KERNEL_VERSION} linux-kernel
+          wget https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/snapshot/linux-${KERNEL_VERSION}.y.tar.gz
+          tar -xzf linux-${KERNEL_VERSION}.y.tar.gz
+          mv linux-${KERNEL_VERSION}.y linux-kernel
           echo "KERNEL_DIR=/tmp/linux-kernel" >> $GITHUB_ENV
 
       - name: Apply kernel patches
