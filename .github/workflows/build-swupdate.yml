@@ -1,0 +1,180 @@
+name: Build SWUpdate Buildroot Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'swupdate/**'
+      - '.github/workflows/build-swupdate.yml'
+  workflow_dispatch:
+    inputs:
+      buildroot_version:
+        description: 'Buildroot version to use'
+        required: false
+        default: '2021.05.1'
+
+env:
+  BUILDROOT_VERSION: 2021.05.1
+  KERNEL_VERSION: 5.15
+  ARCH: arm
+  CROSS_COMPILE: arm-linux-gnueabihf-
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libncurses-dev \
+            pkg-config \
+            bc \
+            git \
+            wget \
+            cpio \
+            unzip \
+            rsync \
+            curl \
+            libssl-dev \
+            bison \
+            flex \
+            u-boot-tools \
+            device-tree-compiler \
+            gcc-arm-linux-gnueabihf \
+            binutils-arm-linux-gnueabihf
+
+      - name: Download and extract Buildroot
+        run: |
+          cd /tmp
+          wget https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.gz
+          tar -xzf buildroot-${BUILDROOT_VERSION}.tar.gz
+          mv buildroot-${BUILDROOT_VERSION} buildroot
+          echo "BUILDROOT_DIR=/tmp/buildroot" >> $GITHUB_ENV
+
+      - name: Configure Buildroot
+        run: |
+          cd $BUILDROOT_DIR
+          cp ${GITHUB_WORKSPACE}/swupdate/buildroot.config .config
+          
+          # Update overlay path to repository location
+          sed -i "s|BR2_ROOTFS_OVERLAY=.*|BR2_ROOTFS_OVERLAY=\"${GITHUB_WORKSPACE}/swupdate/buildroot-overlay\"|" .config
+
+      - name: Configure Busybox
+        run: |
+          cd $BUILDROOT_DIR
+          mkdir -p package/busybox
+          cp ${GITHUB_WORKSPACE}/swupdate/busybox.config package/busybox/busybox.config
+
+      - name: Build Buildroot rootfs
+        run: |
+          cd $BUILDROOT_DIR
+          make -j$(nproc) 2>&1 | tee build.log
+        timeout-minutes: 180
+
+      - name: Download Linux kernel
+        run: |
+          cd /tmp
+          wget https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-${KERNEL_VERSION}.y.git/snapshot/linux-${KERNEL_VERSION}.tar.gz
+          tar -xzf linux-${KERNEL_VERSION}.tar.gz
+          mv linux-${KERNEL_VERSION} linux-kernel
+          echo "KERNEL_DIR=/tmp/linux-kernel" >> $GITHUB_ENV
+
+      - name: Apply kernel patches
+        run: |
+          cd $KERNEL_DIR
+          for patch in ${GITHUB_WORKSPACE}/kernel_files/*.patch; do
+            if [ -f "$patch" ]; then
+              git apply "$patch" || patch -p1 < "$patch"
+            fi
+          done
+
+      - name: Build kernel
+        run: |
+          cd $KERNEL_DIR
+          cp ${GITHUB_WORKSPACE}/swupdate/kernel.config .config
+          
+          # Build kernel with cross-compiler
+          ARCH=$ARCH \
+          CROSS_COMPILE=$CROSS_COMPILE \
+          make -j$(nproc) zImage dtbs 2>&1 | tee kernel-build.log
+        timeout-minutes: 120
+
+      - name: Prepare build artifacts
+        run: |
+          mkdir -p ${{ github.workspace }}/build/itb
+          
+          # Copy built artifacts
+          cp $BUILDROOT_DIR/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
+          cp $BUILDROOT_DIR/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
+          
+          cp $KERNEL_DIR/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
+          cp $KERNEL_DIR/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
+          find $KERNEL_DIR/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
+
+      - name: Create ITB image
+        run: |
+          cd ${{ github.workspace }}/build/itb
+          
+          # Generate ITB from its specification
+          mkimage -f ${GITHUB_WORKSPACE}/swupdate/swupdate.its swupdate.itb
+          
+          ls -lh swupdate.itb
+          mv swupdate.itb ../ || true
+
+      - name: Build SWU image
+        run: |
+          cd ${{ github.workspace }}/build
+          
+          if [ -f ${GITHUB_WORKSPACE}/swupdate-gen-image/build-image.sh ]; then
+            bash ${GITHUB_WORKSPACE}/swupdate-gen-image/build-image.sh \
+              ${{ github.workspace }}/build/swupdate.itb || true
+          else
+            echo "build-image.sh not found, skipping SWU image generation"
+          fi
+
+      - name: Create output directory
+        run: |
+          mkdir -p ${{ github.workspace }}/output
+          cp ${{ github.workspace }}/build/*.itb ${{ github.workspace }}/output/ || true
+          cp ${{ github.workspace }}/build/*.swu ${{ github.workspace }}/output/ || true
+          ls -lh ${{ github.workspace }}/output/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: swupdate-images-${{ github.run_number }}
+          path: ${{ github.workspace }}/output/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Create Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ github.workspace }}/output/*.itb
+            ${{ github.workspace }}/output/*.swu
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: |
+            /tmp/buildroot/build.log
+            /tmp/linux-kernel/kernel-build.log
+          retention-days: 7
