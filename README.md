@@ -1,3 +1,13 @@
+# Improve SWUpdate Image
+
+Attempting to 
+1. reproduce macromorgan's swupdate build with GitHub Actions to then modify the image to:
+2. Act as a DHCP server instead of using static 10.10.10.10 so that it's not needed to configure the other end USB Ethernet
+3. Recognize the PocketCHIP hardware by loading the device tree and overlay during boot it is possible to interact with the swupdate console without UART Serial access
+4. Add an early Splash Screen during boot so that it is User friendlier. 
+
+# Original README:
+
 This is a work in progress, I am still working through issues on getting
 mainline Debian working on an NTC CHIP/PocketCHIP. Note that for now
 mainline Debian should work for Toshiba NAND CHIPs, so long as you either
