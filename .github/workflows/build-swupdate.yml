@@ -53,17 +53,35 @@ jobs:
             gcc-arm-linux-gnueabihf \
             binutils-arm-linux-gnueabihf
 
+      - name: Generate Buildroot cache key
+        id: buildroot-cache-key
+        run: |
+          CONFIG_HASH=$(sha256sum ${GITHUB_WORKSPACE}/swupdate/buildroot.config | cut -d' ' -f1)
+          echo "cache_key=buildroot-${{ env.BUILDROOT_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
+
+      - name: Restore Buildroot cache
+        uses: actions/cache@v4
+        id: buildroot-cache
+        with:
+          path: /tmp/buildroot-build
+          key: ${{ steps.buildroot-cache-key.outputs.cache_key }}
+          restore-keys: |
+            buildroot-${{ env.BUILDROOT_VERSION }}-
+
       - name: Download and extract Buildroot
+        if: steps.buildroot-cache.outputs.cache-hit != 'true'
         run: |
           cd /tmp
           wget https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.gz
           tar -xzf buildroot-${BUILDROOT_VERSION}.tar.gz
-          mv buildroot-${BUILDROOT_VERSION} buildroot
-          echo "BUILDROOT_DIR=/tmp/buildroot" >> $GITHUB_ENV
+          mkdir -p buildroot-build
+          mv buildroot-${BUILDROOT_VERSION}/* buildroot-build/
+          rm -rf buildroot-${BUILDROOT_VERSION} buildroot-${BUILDROOT_VERSION}.tar.gz
 
       - name: Configure Buildroot
         run: |
-          cd $BUILDROOT_DIR
+          mkdir -p /tmp/buildroot-build
+          cd /tmp/buildroot-build
           cp ${GITHUB_WORKSPACE}/swupdate/buildroot.config .config
           
           # Update overlay path to repository location
@@ -71,37 +89,84 @@ jobs:
 
       - name: Configure Busybox
         run: |
-          cd $BUILDROOT_DIR
-          mkdir -p package/busybox
-          cp ${GITHUB_WORKSPACE}/swupdate/busybox.config package/busybox/busybox.config
+          mkdir -p /tmp/buildroot-build/package/busybox
+          cp ${GITHUB_WORKSPACE}/swupdate/busybox.config /tmp/buildroot-build/package/busybox/busybox.config
+
+      - name: Cache Buildroot output
+        uses: actions/cache@v4
+        id: buildroot-output-cache
+        with:
+          path: /tmp/buildroot-build/output
+          key: buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/buildroot.config', 'swupdate/busybox.config', 'swupdate/buildroot-overlay/**') }}
+          restore-keys: |
+            buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-
 
       - name: Build Buildroot rootfs
+        if: steps.buildroot-output-cache.outputs.cache-hit != 'true'
         run: |
-          cd $BUILDROOT_DIR
+          cd /tmp/buildroot-build
           make -j$(nproc) 2>&1 | tee build.log
         timeout-minutes: 180
 
+      - name: Generate Kernel cache key
+        id: kernel-cache-key
+        run: |
+          CONFIG_HASH=$(sha256sum ${GITHUB_WORKSPACE}/swupdate/kernel.config | cut -d' ' -f1)
+          echo "cache_key=kernel-${{ env.KERNEL_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
+
+      - name: Restore Kernel cache
+        uses: actions/cache@v4
+        id: kernel-cache
+        with:
+          path: /tmp/linux-kernel-src
+          key: ${{ steps.kernel-cache-key.outputs.cache_key }}
+          restore-keys: |
+            kernel-${{ env.KERNEL_VERSION }}-
+
       - name: Download Linux kernel
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
           cd /tmp
           wget https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/snapshot/linux-${KERNEL_VERSION}.y.tar.gz
           tar -xzf linux-${KERNEL_VERSION}.y.tar.gz
-          mv linux-${KERNEL_VERSION}.y linux-kernel
-          echo "KERNEL_DIR=/tmp/linux-kernel" >> $GITHUB_ENV
+          mkdir -p linux-kernel-src
+          mv linux-${KERNEL_VERSION}.y/* linux-kernel-src/
+          rm -rf linux-${KERNEL_VERSION}.y linux-${KERNEL_VERSION}.y.tar.gz
 
       - name: Apply kernel patches
         run: |
-          cd $KERNEL_DIR
+          mkdir -p /tmp/linux-kernel-src
+          cd /tmp/linux-kernel-src
           for patch in ${GITHUB_WORKSPACE}/kernel_files/*.patch; do
             if [ -f "$patch" ]; then
-              git apply "$patch" || patch -p1 < "$patch"
+              # Check if patch already applied
+              if ! git apply --check "$patch" 2>/dev/null; then
+                git apply "$patch" || patch -p1 < "$patch"
+              fi
             fi
           done
 
-      - name: Build kernel
+      - name: Cache Kernel build output
+        uses: actions/cache@v4
+        id: kernel-output-cache
+        with:
+          path: /tmp/linux-kernel-build
+          key: kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/kernel.config', 'kernel_files/**') }}
+          restore-keys: |
+            kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-
+
+      - name: Prepare kernel build directory
         run: |
-          cd $KERNEL_DIR
-          cp ${GITHUB_WORKSPACE}/swupdate/kernel.config .config
+          mkdir -p /tmp/linux-kernel-build
+          if [ ! -f /tmp/linux-kernel-build/.config ]; then
+            cp /tmp/linux-kernel-src/* /tmp/linux-kernel-build/ -r
+            cp ${GITHUB_WORKSPACE}/swupdate/kernel.config /tmp/linux-kernel-build/.config
+          fi
+
+      - name: Build kernel
+        if: steps.kernel-output-cache.outputs.cache-hit != 'true'
+        run: |
+          cd /tmp/linux-kernel-build
           
           # Build kernel with cross-compiler
           ARCH=$ARCH \
@@ -114,12 +179,12 @@ jobs:
           mkdir -p ${{ github.workspace }}/build/itb
           
           # Copy built artifacts
-          cp $BUILDROOT_DIR/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
-          cp $BUILDROOT_DIR/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
+          cp /tmp/buildroot-build/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
+          cp /tmp/buildroot-build/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
           
-          cp $KERNEL_DIR/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
-          cp $KERNEL_DIR/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
-          find $KERNEL_DIR/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
+          cp /tmp/linux-kernel-build/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
+          cp /tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
+          find /tmp/linux-kernel-build/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
 
       - name: Create ITB image
         run: |
@@ -175,6 +240,6 @@ jobs:
         with:
           name: build-logs-${{ github.run_number }}
           path: |
-            /tmp/buildroot/build.log
-            /tmp/linux-kernel/kernel-build.log
+            /tmp/buildroot-build/build.log
+            /tmp/linux-kernel-build/kernel-build.log
           retention-days: 7
