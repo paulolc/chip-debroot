@@ -178,13 +178,20 @@ jobs:
         run: |
           mkdir -p ${{ github.workspace }}/build/itb
           
-          # Copy built artifacts
+          # Use the explicit paths where you actually built the components
+          # 1. Copy Rootfs
           cp /tmp/buildroot-build/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
           cp /tmp/buildroot-build/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
           
+          # 2. Copy Kernel (Match the path from the 'Build kernel' step)
           cp /tmp/linux-kernel-build/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
+          
+          # 3. Copy DTB
           cp /tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
           find /tmp/linux-kernel-build/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
+          
+          # Verify files exist before moving to next step
+          ls -lh ${{ github.workspace }}/build/itb/
 
       - name: Create ITB image
         run: |
