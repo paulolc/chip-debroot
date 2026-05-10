@@ -16,7 +16,7 @@ on:
 
 env:
   BUILDROOT_VERSION: 2021.05.1
-  KERNEL_VERSION: 5.15
+  KERNEL_VERSION: 5.14
   ARCH: arm
   CROSS_COMPILE: arm-linux-gnueabihf-
 
