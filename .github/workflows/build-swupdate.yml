@@ -71,7 +71,7 @@ jobs:
       - name: Download and extract Buildroot
         if: steps.buildroot-cache.outputs.cache-hit != 'true'
         run: |
-          cd /tmp
+          cd ${GITHUB_WORKSPACE}/tmp
           wget https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.gz
           tar -xzf buildroot-${BUILDROOT_VERSION}.tar.gz
           mkdir -p buildroot-build
@@ -126,7 +126,7 @@ jobs:
       - name: Download Linux kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          cd /tmp
+          cd ${GITHUB_WORKSPACE}/tmp
           wget https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/snapshot/linux-${KERNEL_VERSION}.y.tar.gz
           tar -xzf linux-${KERNEL_VERSION}.y.tar.gz
           mkdir -p linux-kernel-src
