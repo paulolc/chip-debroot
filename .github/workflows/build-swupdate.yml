@@ -196,6 +196,15 @@ jobs:
       - name: Create ITB image
         run: |
           cd ${{ github.workspace }}/build/itb
+
+          
+          # Log spec for itb image generation
+          ${GITHUB_WORKSPACE}/swupdate/swupdate.its
+
+          echo "Current directory: $PWD"
+          echo "Checking files required for image generation:"
+          ls -l .
+          ls -l ./zImage ./sun5i-r8-chip.dtb ./rootfs.cpio.xz
           
           # Generate ITB from its specification
           mkimage -f ${GITHUB_WORKSPACE}/swupdate/swupdate.its swupdate.itb
