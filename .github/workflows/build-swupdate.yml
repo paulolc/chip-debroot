@@ -53,6 +53,10 @@ jobs:
             gcc-arm-linux-gnueabihf \
             binutils-arm-linux-gnueabihf
 
+      - name: Create temporary build directory
+        run: |
+          mkdir -p ${GITHUB_WORKSPACE}/tmp
+
       - name: Generate Buildroot cache key
         id: buildroot-cache-key
         run: |
