@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache@v4
         id: buildroot-cache
         with:
-          path: /tmp/buildroot-build
+          path: ${GITHUB_WORKSPACE}/tmp/buildroot-build
           key: ${{ steps.buildroot-cache-key.outputs.cache_key }}
           restore-keys: |
             buildroot-${{ env.BUILDROOT_VERSION }}-
@@ -80,8 +80,8 @@ jobs:
 
       - name: Configure Buildroot
         run: |
-          mkdir -p /tmp/buildroot-build
-          cd /tmp/buildroot-build
+          mkdir -p ${GITHUB_WORKSPACE}/tmp/buildroot-build
+          cd ${GITHUB_WORKSPACE}/tmp/buildroot-build
           cp ${GITHUB_WORKSPACE}/swupdate/buildroot.config .config
           
           # Update overlay path to repository location
@@ -89,14 +89,14 @@ jobs:
 
       - name: Configure Busybox
         run: |
-          mkdir -p /tmp/buildroot-build/package/busybox
-          cp ${GITHUB_WORKSPACE}/swupdate/busybox.config /tmp/buildroot-build/package/busybox/busybox.config
+          mkdir -p ${GITHUB_WORKSPACE}/tmp/buildroot-build/package/busybox
+          cp ${GITHUB_WORKSPACE}/swupdate/busybox.config ${GITHUB_WORKSPACE}/tmp/buildroot-build/package/busybox/busybox.config
 
       - name: Cache Buildroot output
         uses: actions/cache@v4
         id: buildroot-output-cache
         with:
-          path: /tmp/buildroot-build/output
+          path: ${GITHUB_WORKSPACE}/tmp/buildroot-build/output
           key: buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/buildroot.config', 'swupdate/busybox.config', 'swupdate/buildroot-overlay/**') }}
           restore-keys: |
             buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-
@@ -104,7 +104,7 @@ jobs:
       - name: Build Buildroot rootfs
         if: steps.buildroot-output-cache.outputs.cache-hit != 'true'
         run: |
-          cd /tmp/buildroot-build
+          cd ${GITHUB_WORKSPACE}/tmp/buildroot-build
           make -j$(nproc) 2>&1 | tee build.log
         timeout-minutes: 180
 
@@ -118,7 +118,7 @@ jobs:
         uses: actions/cache@v4
         id: kernel-cache
         with:
-          path: /tmp/linux-kernel-src
+          path: ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
           key: ${{ steps.kernel-cache-key.outputs.cache_key }}
           restore-keys: |
             kernel-${{ env.KERNEL_VERSION }}-
@@ -135,8 +135,8 @@ jobs:
 
       - name: Apply kernel patches
         run: |
-          mkdir -p /tmp/linux-kernel-src
-          cd /tmp/linux-kernel-src
+          mkdir -p ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
+          cd ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
           for patch in ${GITHUB_WORKSPACE}/kernel_files/*.patch; do
             if [ -f "$patch" ]; then
               # Check if patch already applied
@@ -150,23 +150,23 @@ jobs:
         uses: actions/cache@v4
         id: kernel-output-cache
         with:
-          path: /tmp/linux-kernel-build
+          path: ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
           key: kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/kernel.config', 'kernel_files/**') }}
           restore-keys: |
             kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-
 
       - name: Prepare kernel build directory
         run: |
-          mkdir -p /tmp/linux-kernel-build
-          if [ ! -f /tmp/linux-kernel-build/.config ]; then
-            cp /tmp/linux-kernel-src/* /tmp/linux-kernel-build/ -r
-            cp ${GITHUB_WORKSPACE}/swupdate/kernel.config /tmp/linux-kernel-build/.config
+          mkdir -p ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
+          if [ ! -f ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/.config ]; then
+            cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-src/* ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/ -r
+            cp ${GITHUB_WORKSPACE}/swupdate/kernel.config ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/.config
           fi
 
       - name: Build kernel
         if: steps.kernel-output-cache.outputs.cache-hit != 'true'
         run: |
-          cd /tmp/linux-kernel-build
+          cd ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
           
           # Build kernel with cross-compiler
           ARCH=$ARCH \
@@ -180,15 +180,15 @@ jobs:
           
           # Use the explicit paths where you actually built the components
           # 1. Copy Rootfs
-          cp /tmp/buildroot-build/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
-          cp /tmp/buildroot-build/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
+          cp ${GITHUB_WORKSPACE}/tmp/buildroot-build/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
+          cp ${GITHUB_WORKSPACE}/tmp/buildroot-build/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
           
           # 2. Copy Kernel (Match the path from the 'Build kernel' step)
-          cp /tmp/linux-kernel-build/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
+          cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
           
           # 3. Copy DTB
-          cp /tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
-          find /tmp/linux-kernel-build/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
+          cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
+          find ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
           
           # Verify files exist before moving to next step
           ls -lh ${{ github.workspace }}/build/itb/
@@ -199,7 +199,8 @@ jobs:
 
           
           # Log spec for itb image generation
-          ${GITHUB_WORKSPACE}/swupdate/swupdate.its
+          echo "swupdate.its contents:"
+          cat ${GITHUB_WORKSPACE}/swupdate/swupdate.its
 
           echo "Current directory: $PWD"
           echo "Checking files required for image generation:"
@@ -256,6 +257,6 @@ jobs:
         with:
           name: build-logs-${{ github.run_number }}
           path: |
-            /tmp/buildroot-build/build.log
-            /tmp/linux-kernel-build/kernel-build.log
+            ${GITHUB_WORKSPACE}/tmp/buildroot-build/build.log
+            ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/kernel-build.log
           retention-days: 7
