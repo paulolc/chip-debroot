@@ -210,10 +210,13 @@ jobs:
           echo "Checking files required for image generation:"
           ls -l .
           ls -l ./zImage ./sun5i-r8-chip.dtb ./rootfs.cpio.xz
+
+          # 2. Copy the .its file here so relative paths (/incbin/) work correctly
+          cp ${GITHUB_WORKSPACE}/swupdate/swupdate.its .
           
           # Generate ITB from its specification
-          mkimage -f ${GITHUB_WORKSPACE}/swupdate/swupdate.its swupdate.itb
-          
+          mkimage -f swupdate.its swupdate.itb
+                    
           ls -lh swupdate.itb
           mv swupdate.itb ../ || true
 
