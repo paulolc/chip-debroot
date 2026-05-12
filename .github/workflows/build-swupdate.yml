@@ -26,6 +26,9 @@ jobs:
     permissions:
       contents: write
       packages: write
+      
+    outputs:
+      cache_key: ${{ steps.buildroot-cache-key.outputs.cache_key }}
 
     steps:
       - name: Checkout repository
@@ -178,6 +181,23 @@ jobs:
           make -j$(nproc) zImage dtbs 2>&1 | tee kernel-build.log
         timeout-minutes: 120
 
+  create_image:
+    needs: build_buildroot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+    
+      - name: Restore Buildroot and Kernel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/tmp/buildroot-build
+            ${{ github.workspace }}/tmp/linux-kernel-build
+          key: buildroot-output-${{ needs.build_buildroot.outputs.cache_key }} # Use your specific keys
+    
       - name: Prepare build artifacts
         run: |
           mkdir -p ${{ github.workspace }}/build/itb
@@ -197,14 +217,6 @@ jobs:
           # Verify files exist before moving to next step
           ls -lh ${{ github.workspace }}/build/itb/
 
-  create_image:
-    needs: build_buildroot
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      packages: write
-
-    steps:
       - name: Create ITB image
         run: |
           cd ${{ github.workspace }}/build/itb
