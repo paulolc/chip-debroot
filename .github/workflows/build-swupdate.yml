@@ -21,7 +21,7 @@ env:
   CROSS_COMPILE: arm-linux-gnueabihf-
 
 jobs:
-  build:
+  build_buildroot:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -197,6 +197,14 @@ jobs:
           # Verify files exist before moving to next step
           ls -lh ${{ github.workspace }}/build/itb/
 
+  create_image:
+    needs: build_buildroot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
       - name: Create ITB image
         run: |
           cd ${{ github.workspace }}/build/itb
@@ -219,17 +227,6 @@ jobs:
                     
           ls -lh swupdate.itb
           mv swupdate.itb ../ || true
-
-      - name: Build SWU image
-        run: |
-          cd ${{ github.workspace }}/build
-          
-          if [ -f ${GITHUB_WORKSPACE}/swupdate-gen-image/build-image.sh ]; then
-            bash ${GITHUB_WORKSPACE}/swupdate-gen-image/build-image.sh \
-              ${{ github.workspace }}/build/swupdate.itb || true
-          else
-            echo "build-image.sh not found, skipping SWU image generation"
-          fi
 
       - name: Create output directory
         run: |
