@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v7.0.1
 
       - name: Install build dependencies
         run: |
@@ -59,19 +59,19 @@ jobs:
 
       - name: Create temporary build directory
         run: |
-          mkdir -p ${GITHUB_WORKSPACE}/tmp
+          mkdir -p ${{ github.workspace }}/tmp
 
       - name: Generate Buildroot cache key
         id: buildroot-cache-key
         run: |
-          CONFIG_HASH=$(sha256sum ${GITHUB_WORKSPACE}/swupdate/buildroot.config | cut -d' ' -f1)
+          CONFIG_HASH=$(sha256sum ${{ github.workspace }}/swupdate/buildroot.config | cut -d' ' -f1)
           echo "cache_key=buildroot-${{ env.BUILDROOT_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
 
       - name: Restore Buildroot cache
-        uses: actions/cache@v4.2.0
+        uses: actions/cache@v6.1.0
         id: buildroot-cache
         with:
-          path: ${GITHUB_WORKSPACE}/tmp/buildroot-build
+          path: ${{ github.workspace }}/tmp/buildroot-build
           key: ${{ steps.buildroot-cache-key.outputs.cache_key }}
           restore-keys: |
             buildroot-${{ env.BUILDROOT_VERSION }}-
@@ -79,7 +79,7 @@ jobs:
       - name: Download and extract Buildroot
         if: steps.buildroot-cache.outputs.cache-hit != 'true'
         run: |
-          cd ${GITHUB_WORKSPACE}/tmp
+          cd ${{ github.workspace }}/tmp
           wget https://buildroot.org/downloads/buildroot-${BUILDROOT_VERSION}.tar.gz
           tar -xzf buildroot-${BUILDROOT_VERSION}.tar.gz
           mkdir -p buildroot-build
@@ -88,23 +88,23 @@ jobs:
 
       - name: Configure Buildroot
         run: |
-          mkdir -p ${GITHUB_WORKSPACE}/tmp/buildroot-build
-          cd ${GITHUB_WORKSPACE}/tmp/buildroot-build
-          cp ${GITHUB_WORKSPACE}/swupdate/buildroot.config .config
+          mkdir -p ${{ github.workspace }}/tmp/buildroot-build
+          cd ${{ github.workspace }}/tmp/buildroot-build
+          cp ${{ github.workspace }}/swupdate/buildroot.config .config
 
           # Update overlay path to repository location
-          sed -i "s|BR2_ROOTFS_OVERLAY=.*|BR2_ROOTFS_OVERLAY=\"${GITHUB_WORKSPACE}/swupdate/buildroot-overlay\"|" .config
+          sed -i "s|BR2_ROOTFS_OVERLAY=.*|BR2_ROOTFS_OVERLAY=\"${{ github.workspace }}/swupdate/buildroot-overlay\"|" .config
 
       - name: Configure Busybox
         run: |
-          mkdir -p ${GITHUB_WORKSPACE}/tmp/buildroot-build/package/busybox
-          cp ${GITHUB_WORKSPACE}/swupdate/busybox.config ${GITHUB_WORKSPACE}/tmp/buildroot-build/package/busybox/busybox.config
+          mkdir -p ${{ github.workspace }}/tmp/buildroot-build/package/busybox
+          cp ${{ github.workspace }}/swupdate/busybox.config ${{ github.workspace }}/tmp/buildroot-build/package/busybox/busybox.config
 
       - name: Cache Buildroot output
-        uses: actions/cache@v4.2.0
+        uses: actions/cache@v6.1.0
         id: buildroot-output-cache
         with:
-          path: ${GITHUB_WORKSPACE}/tmp/buildroot-build/output
+          path: ${{ github.workspace }}/tmp/buildroot-build/output
           key: buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/buildroot.config', 'swupdate/busybox.config', 'swupdate/buildroot-overlay/**') }}
           restore-keys: |
             buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-
@@ -112,21 +112,21 @@ jobs:
       - name: Build Buildroot rootfs
         if: steps.buildroot-output-cache.outputs.cache-hit != 'true'
         run: |
-          cd ${GITHUB_WORKSPACE}/tmp/buildroot-build
+          cd ${{ github.workspace }}/tmp/buildroot-build
           make -j$(nproc) 2>&1 | tee build.log
         timeout-minutes: 180
 
       - name: Generate Kernel cache key
         id: kernel-cache-key
         run: |
-          CONFIG_HASH=$(sha256sum ${GITHUB_WORKSPACE}/swupdate/kernel.config | cut -d' ' -f1)
+          CONFIG_HASH=$(sha256sum ${{ github.workspace }}/swupdate/kernel.config | cut -d' ' -f1)
           echo "cache_key=kernel-${{ env.KERNEL_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
 
       - name: Restore Kernel cache
-        uses: actions/cache@v4.2.0
+        uses: actions/cache@v6.1.0
         id: kernel-cache
         with:
-          path: ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
+          path: ${{ github.workspace }}/tmp/linux-kernel-src
           key: ${{ steps.kernel-cache-key.outputs.cache_key }}
           restore-keys: |
             kernel-${{ env.KERNEL_VERSION }}-
@@ -134,7 +134,7 @@ jobs:
       - name: Download Linux kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
         run: |
-          cd ${GITHUB_WORKSPACE}/tmp
+          cd ${{ github.workspace }}/tmp
           wget https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/snapshot/linux-${KERNEL_VERSION}.y.tar.gz
           tar -xzf linux-${KERNEL_VERSION}.y.tar.gz
           mkdir -p linux-kernel-src
@@ -143,9 +143,9 @@ jobs:
 
       - name: Apply kernel patches
         run: |
-          mkdir -p ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
-          cd ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
-          for patch in ${GITHUB_WORKSPACE}/kernel_files/*.patch; do
+          mkdir -p ${{ github.workspace }}/tmp/linux-kernel-src
+          cd ${{ github.workspace }}/tmp/linux-kernel-src
+          for patch in ${{ github.workspace }}/kernel_files/*.patch; do
             if [ -f "$patch" ]; then
               if ! git apply --check "$patch" 2>/dev/null; then
                 git apply "$patch" || patch -p1 < "$patch"
@@ -154,26 +154,26 @@ jobs:
           done
 
       - name: Cache Kernel build output
-        uses: actions/cache@v4.2.0
+        uses: actions/cache@v6.1.0
         id: kernel-output-cache
         with:
-          path: ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
+          path: ${{ github.workspace }}/tmp/linux-kernel-build
           key: kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/kernel.config', 'kernel_files/**') }}
           restore-keys: |
             kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-
 
       - name: Prepare kernel build directory
         run: |
-          mkdir -p ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
-          if [ ! -f ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/.config ]; then
-            cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-src/* ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/ -r
-            cp ${GITHUB_WORKSPACE}/swupdate/kernel.config ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/.config
+          mkdir -p ${{ github.workspace }}/tmp/linux-kernel-build
+          if [ ! -f ${{ github.workspace }}/tmp/linux-kernel-build/.config ]; then
+            cp ${{ github.workspace }}/tmp/linux-kernel-src/* ${{ github.workspace }}/tmp/linux-kernel-build/ -r
+            cp ${{ github.workspace }}/swupdate/kernel.config ${{ github.workspace }}/tmp/linux-kernel-build/.config
           fi
 
       - name: Build kernel
         if: steps.kernel-output-cache.outputs.cache-hit != 'true'
         run: |
-          cd ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
+          cd ${{ github.workspace }}/tmp/linux-kernel-build
 
           ARCH=$ARCH \
           CROSS_COMPILE=$CROSS_COMPILE \
@@ -188,60 +188,139 @@ jobs:
       packages: write
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Create temporary build directory
+        run: |
+          mkdir -p ${{ github.workspace }}/tmp
+
       - name: Restore Buildroot output cache
-        uses: actions/cache@v4.2.0
+        uses: actions/cache@v6.1.0
         with:
           path: ${{ github.workspace }}/tmp/buildroot-build/output
           key: ${{ needs.build_buildroot.outputs.buildroot_output_key }}
+          fail-on-cache-miss: true
 
       - name: Restore Kernel output cache
-        uses: actions/cache@v4.2.0
+        uses: actions/cache@v6.1.0
         with:
           path: ${{ github.workspace }}/tmp/linux-kernel-build
           key: ${{ needs.build_buildroot.outputs.kernel_output_key }}
+          fail-on-cache-miss: true
 
       - name: Prepare build artifacts
         run: |
           mkdir -p ${{ github.workspace }}/build/itb
 
-          cp ${GITHUB_WORKSPACE}/tmp/buildroot-build/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
-          cp ${GITHUB_WORKSPACE}/tmp/buildroot-build/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
+          if [ -f "${{ github.workspace }}/tmp/buildroot-build/output/images/rootfs.cpio.xz" ]; then
+            cp ${{ github.workspace }}/tmp/buildroot-build/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/
+          elif [ -f "${{ github.workspace }}/tmp/buildroot-build/output/images/rootfs.cpio" ]; then
+            cp ${{ github.workspace }}/tmp/buildroot-build/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
+          else
+            echo "ERROR: No rootfs found in output/images/"
+            ls -la ${{ github.workspace }}/tmp/buildroot-build/output/images/ || echo "images directory missing"
+            exit 1
+          fi
 
-          cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
+          if [ ! -f "${{ github.workspace }}/tmp/linux-kernel-build/arch/arm/boot/zImage" ]; then
+            echo "ERROR: zImage not found"
+            exit 1
+          fi
+          cp ${{ github.workspace }}/tmp/linux-kernel-build/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
 
-          cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
-          find ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
+          if [ -f "${{ github.workspace }}/tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb" ]; then
+            cp ${{ github.workspace }}/tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/
+          else
+            found_dtb=false
+            for dtb in ${{ github.workspace }}/tmp/linux-kernel-build/arch/arm/boot/dts/*.dtb; do
+              if [ -f "$dtb" ]; then
+                cp "$dtb" ${{ github.workspace }}/build/itb/
+                found_dtb=true
+              fi
+            done
+            if [ "$found_dtb" = false ]; then
+              echo "ERROR: No DTB files found"
+              exit 1
+            fi
+          fi
 
+          echo "Prepared build artifacts:"
           ls -lh ${{ github.workspace }}/build/itb/
 
       - name: Create ITB image
         run: |
           cd ${{ github.workspace }}/build/itb
 
-          echo "swupdate.its contents:"
-          cat ${GITHUB_WORKSPACE}/swupdate/swupdate.its
+          echo "=== swupdate.its contents ==="
+          cat ${{ github.workspace }}/swupdate/swupdate.its
 
-          echo "Current directory: $PWD"
-          echo "Checking files required for image generation:"
-          ls -l .
-          ls -l ./zImage ./sun5i-r8-chip.dtb ./rootfs.cpio.xz
+          echo ""
+          echo "=== Current directory ==="
+          pwd
 
-          cp ${GITHUB_WORKSPACE}/swupdate/swupdate.its .
+          echo ""
+          echo "=== Files available for image creation ==="
+          ls -lh .
+
+          required_files=("zImage")
+          rootfs_found=false
+          dtb_found=false
+
+          if [ -f "rootfs.cpio.xz" ] || [ -f "rootfs.cpio" ]; then
+            rootfs_found=true
+          fi
+
+          if ls *.dtb 1> /dev/null 2>&1; then
+            dtb_found=true
+          fi
+
+          if [ "$rootfs_found" = false ]; then
+            echo "ERROR: No rootfs.cpio or rootfs.cpio.xz found"
+            exit 1
+          fi
+
+          if [ "$dtb_found" = false ]; then
+            echo "ERROR: No .dtb files found"
+            exit 1
+          fi
+
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "ERROR: Missing required file: $file"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "=== Creating ITB image ==="
+          cp ${{ github.workspace }}/swupdate/swupdate.its .
 
           mkimage -f swupdate.its swupdate.itb
 
+          if [ ! -f "swupdate.itb" ]; then
+            echo "ERROR: mkimage failed to create swupdate.itb"
+            exit 1
+          fi
+
+          echo "=== Image created successfully ==="
           ls -lh swupdate.itb
-          mv swupdate.itb ../ || true
+          mv swupdate.itb ../
 
       - name: Create output directory
         run: |
           mkdir -p ${{ github.workspace }}/output
-          cp ${{ github.workspace }}/build/*.itb ${{ github.workspace }}/output/ || true
-          cp ${{ github.workspace }}/build/*.swu ${{ github.workspace }}/output/ || true
+          if [ -f "${{ github.workspace }}/build/swupdate.itb" ]; then
+            cp ${{ github.workspace }}/build/swupdate.itb ${{ github.workspace }}/output/
+          fi
+          if [ -f "${{ github.workspace }}/build/swupdate.swu" ]; then
+            cp ${{ github.workspace }}/build/swupdate.swu ${{ github.workspace }}/output/
+          fi
+          echo "=== Output artifacts ==="
           ls -lh ${{ github.workspace }}/output/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4.6.0
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: swupdate-images-${{ github.run_number }}
           path: ${{ github.workspace }}/output/
@@ -250,7 +329,7 @@ jobs:
 
       - name: Create Release (on tag)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ github.workspace }}/output/*.itb
@@ -262,10 +341,10 @@ jobs:
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4.6.0
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: build-logs-${{ github.run_number }}
           path: |
-            ${GITHUB_WORKSPACE}/tmp/buildroot-build/build.log
-            ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/kernel-build.log
+            ${{ github.workspace }}/tmp/buildroot-build/build.log
+            ${{ github.workspace }}/tmp/linux-kernel-build/kernel-build.log
           retention-days: 7
