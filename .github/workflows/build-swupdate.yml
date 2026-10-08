@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Install build dependencies
         run: |
@@ -67,7 +67,7 @@ jobs:
           echo "cache_key=buildroot-${{ env.BUILDROOT_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
 
       - name: Restore Buildroot cache
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         id: buildroot-cache
         with:
           path: ${GITHUB_WORKSPACE}/tmp/buildroot-build
@@ -100,7 +100,7 @@ jobs:
           cp ${GITHUB_WORKSPACE}/swupdate/busybox.config ${GITHUB_WORKSPACE}/tmp/buildroot-build/package/busybox/busybox.config
 
       - name: Cache Buildroot output
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         id: buildroot-output-cache
         with:
           path: ${GITHUB_WORKSPACE}/tmp/buildroot-build/output
@@ -122,7 +122,7 @@ jobs:
           echo "cache_key=kernel-${{ env.KERNEL_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
 
       - name: Restore Kernel cache
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         id: kernel-cache
         with:
           path: ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
@@ -154,7 +154,7 @@ jobs:
           done
 
       - name: Cache Kernel build output
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         id: kernel-output-cache
         with:
           path: ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
@@ -191,7 +191,7 @@ jobs:
     steps:
     
       - name: Restore Buildroot and Kernel cache
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         with:
           path: |
             ${{ github.workspace }}/tmp/buildroot-build
@@ -248,7 +248,7 @@ jobs:
           ls -lh ${{ github.workspace }}/output/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.0
         with:
           name: swupdate-images-${{ github.run_number }}
           path: ${{ github.workspace }}/output/
@@ -269,7 +269,7 @@ jobs:
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.0
         with:
           name: build-logs-${{ github.run_number }}
           path: |
