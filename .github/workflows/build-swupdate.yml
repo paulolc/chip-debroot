@@ -26,9 +26,10 @@ jobs:
     permissions:
       contents: write
       packages: write
-      
+
     outputs:
-      cache_key: ${{ steps.buildroot-cache-key.outputs.cache_key }}
+      buildroot_output_key: ${{ steps.buildroot-output-cache.outputs.cache-primary-key }}
+      kernel_output_key: ${{ steps.kernel-output-cache.outputs.cache-primary-key }}
 
     steps:
       - name: Checkout repository
@@ -90,7 +91,7 @@ jobs:
           mkdir -p ${GITHUB_WORKSPACE}/tmp/buildroot-build
           cd ${GITHUB_WORKSPACE}/tmp/buildroot-build
           cp ${GITHUB_WORKSPACE}/swupdate/buildroot.config .config
-          
+
           # Update overlay path to repository location
           sed -i "s|BR2_ROOTFS_OVERLAY=.*|BR2_ROOTFS_OVERLAY=\"${GITHUB_WORKSPACE}/swupdate/buildroot-overlay\"|" .config
 
@@ -146,7 +147,6 @@ jobs:
           cd ${GITHUB_WORKSPACE}/tmp/linux-kernel-src
           for patch in ${GITHUB_WORKSPACE}/kernel_files/*.patch; do
             if [ -f "$patch" ]; then
-              # Check if patch already applied
               if ! git apply --check "$patch" 2>/dev/null; then
                 git apply "$patch" || patch -p1 < "$patch"
               fi
@@ -174,8 +174,7 @@ jobs:
         if: steps.kernel-output-cache.outputs.cache-hit != 'true'
         run: |
           cd ${GITHUB_WORKSPACE}/tmp/linux-kernel-build
-          
-          # Build kernel with cross-compiler
+
           ARCH=$ARCH \
           CROSS_COMPILE=$CROSS_COMPILE \
           make -j$(nproc) zImage dtbs 2>&1 | tee kernel-build.log
@@ -189,40 +188,36 @@ jobs:
       packages: write
 
     steps:
-    
-      - name: Restore Buildroot and Kernel cache
+      - name: Restore Buildroot output cache
         uses: actions/cache@v4.2.0
         with:
-          path: |
-            ${{ github.workspace }}/tmp/buildroot-build
-            ${{ github.workspace }}/tmp/linux-kernel-build
-          key: buildroot-output-${{ needs.build_buildroot.outputs.cache_key }} # Use your specific keys
-    
+          path: ${{ github.workspace }}/tmp/buildroot-build/output
+          key: ${{ needs.build_buildroot.outputs.buildroot_output_key }}
+
+      - name: Restore Kernel output cache
+        uses: actions/cache@v4.2.0
+        with:
+          path: ${{ github.workspace }}/tmp/linux-kernel-build
+          key: ${{ needs.build_buildroot.outputs.kernel_output_key }}
+
       - name: Prepare build artifacts
         run: |
           mkdir -p ${{ github.workspace }}/build/itb
-          
-          # Use the explicit paths where you actually built the components
-          # 1. Copy Rootfs
+
           cp ${GITHUB_WORKSPACE}/tmp/buildroot-build/output/images/rootfs.cpio.xz ${{ github.workspace }}/build/itb/ || \
           cp ${GITHUB_WORKSPACE}/tmp/buildroot-build/output/images/rootfs.cpio ${{ github.workspace }}/build/itb/
-          
-          # 2. Copy Kernel (Match the path from the 'Build kernel' step)
+
           cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/zImage ${{ github.workspace }}/build/itb/
-          
-          # 3. Copy DTB
+
           cp ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/dts/sun5i-r8-chip.dtb ${{ github.workspace }}/build/itb/ || \
           find ${GITHUB_WORKSPACE}/tmp/linux-kernel-build/arch/arm/boot/dts -name "*.dtb" -exec cp {} ${{ github.workspace }}/build/itb/ \;
-          
-          # Verify files exist before moving to next step
+
           ls -lh ${{ github.workspace }}/build/itb/
 
       - name: Create ITB image
         run: |
           cd ${{ github.workspace }}/build/itb
 
-          
-          # Log spec for itb image generation
           echo "swupdate.its contents:"
           cat ${GITHUB_WORKSPACE}/swupdate/swupdate.its
 
@@ -231,12 +226,10 @@ jobs:
           ls -l .
           ls -l ./zImage ./sun5i-r8-chip.dtb ./rootfs.cpio.xz
 
-          # 2. Copy the .its file here so relative paths (/incbin/) work correctly
           cp ${GITHUB_WORKSPACE}/swupdate/swupdate.its .
-          
-          # Generate ITB from its specification
+
           mkimage -f swupdate.its swupdate.itb
-                    
+
           ls -lh swupdate.itb
           mv swupdate.itb ../ || true
 
