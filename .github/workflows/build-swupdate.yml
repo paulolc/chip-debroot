@@ -27,10 +27,6 @@ jobs:
       contents: write
       packages: write
 
-    outputs:
-      buildroot_output_key: ${{ steps.buildroot-output-cache.outputs.cache-primary-key }}
-      kernel_output_key: ${{ steps.kernel-output-cache.outputs.cache-primary-key }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
@@ -63,9 +59,18 @@ jobs:
 
       - name: Generate Buildroot cache key
         id: buildroot-cache-key
+        shell: bash
         run: |
-          CONFIG_HASH=$(sha256sum ${{ github.workspace }}/swupdate/buildroot.config | cut -d' ' -f1)
-          echo "cache_key=buildroot-${{ env.BUILDROOT_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
+          set -e
+          CONFIG_FILE="${{ github.workspace }}/swupdate/buildroot.config"
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "ERROR: missing $CONFIG_FILE"
+            exit 1
+          fi
+          CONFIG_HASH=$(sha256sum "$CONFIG_FILE" | cut -d' ' -f1)
+          CACHE_KEY="buildroot-${{ env.BUILDROOT_VERSION }}-${CONFIG_HASH:0:8}"
+          echo "cache_key=${CACHE_KEY}" >> "$GITHUB_OUTPUT"
+          echo "Generated Buildroot cache key: ${CACHE_KEY}"
 
       - name: Restore Buildroot cache
         uses: actions/cache@v6.1.0
@@ -75,6 +80,7 @@ jobs:
           key: ${{ steps.buildroot-cache-key.outputs.cache_key }}
           restore-keys: |
             buildroot-${{ env.BUILDROOT_VERSION }}-
+            buildroot-
 
       - name: Download and extract Buildroot
         if: steps.buildroot-cache.outputs.cache-hit != 'true'
@@ -108,6 +114,7 @@ jobs:
           key: buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/buildroot.config', 'swupdate/busybox.config', 'swupdate/buildroot-overlay/**') }}
           restore-keys: |
             buildroot-output-${{ steps.buildroot-cache-key.outputs.cache_key }}-
+            buildroot-output-
 
       - name: Build Buildroot rootfs
         if: steps.buildroot-output-cache.outputs.cache-hit != 'true'
@@ -118,9 +125,18 @@ jobs:
 
       - name: Generate Kernel cache key
         id: kernel-cache-key
+        shell: bash
         run: |
-          CONFIG_HASH=$(sha256sum ${{ github.workspace }}/swupdate/kernel.config | cut -d' ' -f1)
-          echo "cache_key=kernel-${{ env.KERNEL_VERSION }}-${CONFIG_HASH:0:8}" >> $GITHUB_OUTPUT
+          set -e
+          CONFIG_FILE="${{ github.workspace }}/swupdate/kernel.config"
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "ERROR: missing $CONFIG_FILE"
+            exit 1
+          fi
+          CONFIG_HASH=$(sha256sum "$CONFIG_FILE" | cut -d' ' -f1)
+          CACHE_KEY="kernel-${{ env.KERNEL_VERSION }}-${CONFIG_HASH:0:8}"
+          echo "cache_key=${CACHE_KEY}" >> "$GITHUB_OUTPUT"
+          echo "Generated Kernel cache key: ${CACHE_KEY}"
 
       - name: Restore Kernel cache
         uses: actions/cache@v6.1.0
@@ -130,6 +146,7 @@ jobs:
           key: ${{ steps.kernel-cache-key.outputs.cache_key }}
           restore-keys: |
             kernel-${{ env.KERNEL_VERSION }}-
+            kernel-
 
       - name: Download Linux kernel
         if: steps.kernel-cache.outputs.cache-hit != 'true'
@@ -161,6 +178,7 @@ jobs:
           key: kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-${{ hashFiles('swupdate/kernel.config', 'kernel_files/**') }}
           restore-keys: |
             kernel-build-${{ steps.kernel-cache-key.outputs.cache_key }}-
+            kernel-build-
 
       - name: Prepare kernel build directory
         run: |
@@ -199,15 +217,19 @@ jobs:
         uses: actions/cache@v6.1.0
         with:
           path: ${{ github.workspace }}/tmp/buildroot-build/output
-          key: ${{ needs.build_buildroot.outputs.buildroot_output_key }}
-          fail-on-cache-miss: true
+          key: buildroot-output-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            buildroot-output-
+          fail-on-cache-miss: false
 
       - name: Restore Kernel output cache
         uses: actions/cache@v6.1.0
         with:
           path: ${{ github.workspace }}/tmp/linux-kernel-build
-          key: ${{ needs.build_buildroot.outputs.kernel_output_key }}
-          fail-on-cache-miss: true
+          key: kernel-build-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            kernel-build-
+          fail-on-cache-miss: false
 
       - name: Prepare build artifacts
         run: |
